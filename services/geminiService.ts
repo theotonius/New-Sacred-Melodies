@@ -2,11 +2,22 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 
 const getAI = () => {
-  // Fix: Direct use of process.env.API_KEY for initializing GoogleGenAI as per guidelines
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-// সাময়িক সার্ভার সমস্যা এড়াতে Retry Logic
+// Robust helper to clean and parse JSON from Gemini responses
+const parseAIJson = (text: string) => {
+  if (!text) return null;
+  try {
+    // Remove markdown backticks if present
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (e) {
+    console.error("JSON Parse Error:", e, "Original text:", text);
+    return null;
+  }
+};
+
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
   try {
     return await fn();
@@ -20,7 +31,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Pr
 export const generateReflection = async (songTitle: string, lyrics: string[]) => {
   return withRetry(async () => {
     const ai = getAI();
-    const prompt = `Based on the lyrics of the Bible song "${songTitle}", provide a short spiritual reflection and a related Bible verse. Lyrics: ${lyrics.join(' ')}`;
+    const prompt = `Based on the lyrics of the Bible song "${songTitle}", provide a short spiritual reflection and a related Bible verse. Lyrics: ${lyrics.slice(0, 10).join(' ')}`;
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -75,7 +86,7 @@ export const fetchSongFromAI = async (query: string) => {
         }
       }
     });
-    return JSON.parse(response.text || '{}');
+    return parseAIJson(response.text);
   }).catch(error => {
     console.error("Fetch Song Error:", error);
     return null;
@@ -102,7 +113,7 @@ export const composeNewSong = async (theme: string) => {
         }
       }
     });
-    return JSON.parse(response.text || '{}');
+    return parseAIJson(response.text);
   }).catch(error => {
     console.error("Compose Song Error:", error);
     return null;
@@ -112,10 +123,9 @@ export const composeNewSong = async (theme: string) => {
 export const speakLyrics = async (text: string) => {
   return withRetry(async () => {
     const ai = getAI();
-    // Fix: Simplified contents format to simple string as per guidelines
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: `Read these lyrics warmly: ${text}`,
+      contents: `Read these lyrics warmly: ${text.slice(0, 500)}`,
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
